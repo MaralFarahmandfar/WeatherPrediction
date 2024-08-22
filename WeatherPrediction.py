@@ -9,30 +9,37 @@ from keras.src.models import Sequential
 import math
 
 #بارگذاری اطلاعات
-data = pd.read_csv("E:\.vscode\weather prediction\datas.csv")
+path=input("Enter path of the datas: ")
+path2=input("Enter data file name with .csv: ")
+path=path+"/"+path2
+data = pd.read_csv(path)
+print(data.columns)
+
+date=input("Enter the date column name: ")
+temp=input("Enter the temperature column name: ")
 
 #تبدیل به دیتاتایپ مناسب 
-data['time']=pd.to_datetime(data['time'])
-data['temperature_2m_mean']=pd.to_numeric(data['temperature_2m_mean'])
+data[date]=pd.to_datetime(data[date])
+data[temp]=pd.to_numeric(data[temp])
 
 #تاریخ شروع و پایان مجموعه آموزش و آزمون
-train_start=pd.Timestamp('2014-01-01')
-train_end=pd.Timestamp('2022-12-31')
-test_start=pd.Timestamp('2023-01-01')
-test_end=pd.Timestamp('2024-01-01')
+train_start=pd.Timestamp(input("Enter date of the train_start: "))
+train_end=pd.Timestamp(input("Enter date of the train_end: "))
+test_start=pd.Timestamp(input("Enter date of the test_start: "))
+test_end=pd.Timestamp(input("Enter date of the test_end: "))
 
 #جداسازی مجموعه آموزش
-condition1=(data['time']>=train_start)&(data['time']<=train_end)
+condition1=(data[date]>=train_start)&(data[date]<=train_end)
 if condition1.any():
     Train=data[condition1]
 
 #جداسازی مجموعه آزمون
-condition2=(data['time']>=test_start)&(data['time']<=test_end)
+condition2=(data[date]>=test_start)&(data[date]<=test_end)
 if condition2.any():
     Test=data[condition2]
 
-temp_train=Train[['temperature_2m_mean']]
-temp_test=Test[['temperature_2m_mean']]
+temp_train=Train[[temp]]
+temp_test=Test[[temp]]
 
 #نرمال سازی داده ها
 scaler=MinMaxScaler(feature_range=(0,1))
@@ -47,7 +54,13 @@ def create_dataset(dataset,look_back=1):
         y_data.append(dataset[i+look_back,0])
     return np.array(X_data), np.array(y_data)
 
-look_back=100
+if len(data)>=1000 and len(data)<2000:
+    look_back=60
+elif len(data)>=2000 and len(data)<3000:
+    look_back=100
+elif len(data)>=3000 and len(data)<=4000:
+    look_back=100
+
 trainX,trainY=create_dataset(train_scaled,look_back)
 testX,testY=create_dataset(test_scaled,look_back)
 
@@ -56,15 +69,28 @@ trainX=np.reshape(trainX,(trainX.shape[0],trainX.shape[1],1))
 testX=np.reshape(testX,(testX.shape[0],testX.shape[1],1))
 
 #LSTMساخت شبکه عصبی 
-model=Sequential()
-model.add(LSTM(256,return_sequences=True,input_shape=(look_back,1)))
-model.add(Dropout(0.3))
-model.add(LSTM(128,return_sequences=True))
-model.add(Dropout(0.3))
-model.add(LSTM(64))
-model.add(Dense(32))
-model.add(Dense(1))
+if len(data)>=1000 and len(data)<2000:
 
+    model=Sequential()
+    model.add(LSTM(50,return_sequences=True,input_shape=(look_back,1)))
+    model.add(LSTM(50))
+
+elif len(data)>=2000 and len(data)<3000:
+    model=Sequential()
+    model.add(LSTM(128,return_sequences=True,input_shape=(look_back,1)))
+    model.add(LSTM(64))
+    model.add(Dense(25))
+
+elif len(data)>=3000 and len(data)<=4000:
+    model=Sequential()
+    model.add(LSTM(256,return_sequences=True,input_shape=(look_back,1)))
+    model.add(Dropout(0.3))
+    model.add(LSTM(128,return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(LSTM(64))
+    model.add(Dense(32))
+
+model.add(Dense(1))
 #کامپایل مدل
 model.compile(loss='mean_squared_error',optimizer='adam')
 
@@ -72,7 +98,12 @@ model.compile(loss='mean_squared_error',optimizer='adam')
 early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
 # آموزش مدل با Early Stopping
-model.fit(trainX, trainY, epochs=50, batch_size=64, validation_data=(testX, testY), callbacks=[early_stopping])
+if len(data)>=1000 and len(data)<2000:
+    model.fit(trainX, trainY, epochs=30, batch_size=15, validation_data=(testX, testY), callbacks=[early_stopping])
+elif len(data)>=2000 and len(data)<3000:
+    model.fit(trainX, trainY, epochs=30, batch_size=15, validation_data=(testX, testY), callbacks=[early_stopping])
+elif len(data)>=3000 and len(data)<=4000:
+    model.fit(trainX, trainY, epochs=30, batch_size=64, validation_data=(testX, testY), callbacks=[early_stopping])
 
 #پیش بینی
 trainpredict=model.predict(trainX)
@@ -90,26 +121,27 @@ testScore = math.sqrt(mean_squared_error(testY, testpredict))
 print("test score: %.2f RMSE"% (testScore))
 
 #نمایش روی نمودار
-trainPredictPlot = np.empty((len(temp_train), 1))
+trainPredictPlot = np.empty((len(data[temp]), 1))
 trainPredictPlot[:,:]=np.nan
 trainPredictPlot[look_back:len(trainpredict)+look_back,:]=trainpredict
 
-testPredictPlot = np.empty((len(data['temperature_2m_mean']), 1))
+testPredictPlot = np.empty((len(data[temp]), 1))
 testPredictPlot[:,:]=np.nan
-testPredictPlot[len(trainpredict)+(look_back*2)+1:3652,:]=testpredict
+testPredictPlot[len(trainpredict)+(look_back*2)+1:len(data[temp])-1,:]=testpredict
 
-plt.plot(data['temperature_2m_mean'],label='Data',linestyle='--')
-plt.plot(trainPredictPlot,label='Train Predictions')
-plt.plot(testPredictPlot,label='Test Predictions')
+plt.plot(data[date],data[temp],label='Data',linestyle='--')
+plt.plot(data[date],trainPredictPlot,label='Train Predictions')
+plt.plot(data[date],testPredictPlot,label='Test Predictions')
 plt.title('Weather Prediction')
-plt.xlabel('Day')
+plt.xlabel('Date')
 plt.ylabel('Temperature')
 
 #پیش بینی روز های آینده
-lastdays=trainX[-6].reshape(1,look_back,1) 
-futureDays=365 
+
+futureDays=int(input("Enter the number of days ahead for the forcast: ")) 
+lastdays=train_scaled[-look_back:].reshape(1,look_back,1) 
 prediction=[]
-noise_factor=0.01
+noise_factor=0.005
 
 for _ in range(futureDays): 
     predictFuture=model.predict(lastdays) 
@@ -119,11 +151,11 @@ for _ in range(futureDays):
     
 prediction=np.array(prediction) 
 prediction=scaler.inverse_transform(prediction.reshape(-1,1)) 
-print(prediction)
-futurePredictPlot = np.empty((4018, 1)) 
-futurePredictPlot[:,:]=np.nan
-futurePredictPlot[3652:4017,:]=prediction
 
-plt.plot(futurePredictPlot,label='Future Predictions')
+last_date = data[date].iloc[-1]
+future_dates = pd.date_range(start=last_date, periods=futureDays+1, freq='D')[1:]
+
+plt.plot(future_dates, prediction, label='Future Predictions')
+plt.gcf().autofmt_xdate()
 plt.legend() 
 plt.show() 
